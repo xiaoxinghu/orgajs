@@ -61,7 +61,7 @@ export const read = (text: string) => {
   const eol = () => endOfLine(cursor.line)
 
   const EOF = () => {
-    return toIndex(now()) >= text.length - 1
+    return toIndex(now()) >= text.length;
   }
 
   const distance = ({ start, end }: Position) : number => {
