@@ -25,11 +25,11 @@ export default (text: string) => {
     return Math.max(0, Math.min(index, text.length))
   }
 
-  const middle = (start, end) => {
+  const middle = (start: number, end: number) => {
     return start + Math.floor((end - start) / 2)
   }
 
-  const findLine = (index: number, start: number, end: number) => {
+  const findLine = (index: number, start: number, end: number): number => {
     if (index < 0) return 1
     if (index >= text.length) return lines.length
     const mid = middle(start, end)

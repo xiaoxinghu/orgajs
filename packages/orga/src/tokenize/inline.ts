@@ -137,7 +137,7 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     }
   }
 
-  const tok = () => {
+  const tok = (): Token[] => {
     if (isEqual(now(), end)) {
       return
     }
