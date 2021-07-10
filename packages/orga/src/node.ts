@@ -11,22 +11,24 @@ const adjustPosition = (parent: Parent & Partial<Child>) => (child: Node): void 
   let dirty = false
 
   if (!child.position) return
+  const cp = clone(child.position);
   if (parent.position) {
+    parent.position = clone(parent.position);
     const belowLowerBound = before(parent.position.start)
     const aboveUpperBound = after(parent.position.end)
 
     if (isEmpty(parent.position)) {
-      parent.position = clone(child.position)
+      parent.position = cp;
       dirty = true
-    } else if (belowLowerBound(child.position.start)) {
-      parent.position.start = { ...child.position.start }
+    } else if (belowLowerBound(cp.start)) {
+      parent.position.start = cp.start;
       dirty = true
-    } else if (aboveUpperBound(child.position.end)) {
-      parent.position.end = { ...child.position.end }
+    } else if (aboveUpperBound(cp.end)) {
+      parent.position.end = cp.end;
       dirty = true
     }
   } else {
-    parent.position = clone(child.position)
+    parent.position = cp;
     dirty = true
   }
 

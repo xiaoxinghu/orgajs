@@ -70,7 +70,7 @@ export default (text: string) => {
     return location(toIndex(point) + offset)
   }
 
-  const linePosition = (ln: number): Position => {
+  const linePosition = (ln: number): Position | undefined => {
     if (ln < 1 || ln > lines.length) return undefined
     const nextLine = lines[ln]
     const endIndex = nextLine ? nextLine - 1 : text.length
@@ -85,13 +85,16 @@ export default (text: string) => {
     start: Point,
     end?: Point | 'EOL' | 'EOF' }): string => {
 
-    let endIndex: number
+    let endIndex: number | undefined;
     if (end === 'EOL') {
       const lp = linePosition(start.line)
       if (!lp) {
         console.log({ start })
       }
-      endIndex = toIndex(linePosition(start.line).end)
+      const lineEnd = linePosition(start.line)?.end;
+      if (lineEnd) {
+        endIndex = toIndex(lineEnd)
+      }
     } else if (end === 'EOF') {
       endIndex = text.length
     } else {

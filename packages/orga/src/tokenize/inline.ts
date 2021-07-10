@@ -24,22 +24,25 @@ interface Props {
   end?: Point
 }
 
-export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring: string[] } = { ignoring: [] }): Token[] => {
+export const tokenize = (props: Props, { ignoring }: { ignoring: string[] } = { ignoring: [] }): Token[] => {
+  const { reader } = props;
   const { now, eat, eol, match, jump, substring, getChar } = reader
-  start = start || { ...now() }
-  end = end || { ...eol() }
+  const start = props.start ?? { ...now() }
+  const end = props.end ?? { ...eol() }
   jump(start)
 
   let cursor: Point = { ...start }
 
   const _tokens: Token[] = []
 
-  const tokLink = (): Link => {
+  const tokLink = (): Link | undefined => {
     const m = match(/^\[\[([^\]]*)\](?:\[([^\]]*)\])?\]/m)
     if (!m) return undefined
     const linkInfo = uri(m.captures[1])
-    const { value, ...rest } = linkInfo;
-    return tk.tokLink(value, { ...rest, description: m.captures[2], position: m.position });
+    if (linkInfo) {
+      const { value, ...rest } = linkInfo;
+      return tk.tokLink(value, { ...rest, description: m.captures[2], position: m.position });
+    }
   }
 
   const tokFootnoteAnonOrInline = (): Token[] => {
@@ -67,14 +70,14 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     return tokens;
   }
 
-  const tokFootnote = (): FootnoteReference => {
+  const tokFootnote = (): FootnoteReference | undefined => {
     const m = match(/^\[fn:(\w+)\]/);
     if (m) {
       return tk.tokFootnoteReference(m.captures[1], { position: m.position });
     }
   }
 
-  const tokStyledText = (marker: string) => (): StyledText => {
+  const tokStyledText = (marker: string) => (): StyledText | undefined => {
     const m = match(
       RegExp(`^${escape(marker)}(${BORDER}(?:.*?(?:${BORDER}))??)${escape(marker)}(?=(${POST}.*))`, 'm'))
     if (!m) return undefined
@@ -99,7 +102,7 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     return true
   }
 
-  const tryTo = (tok: () => Token) => {
+  const tryTo = (tok: () => Token | undefined) => {
     return tryToTokens(() => {
       const r = tok();
       return r ? [r] : [];
@@ -113,13 +116,13 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     _tokens.push(tk.tokText(value, { position: position }));
   }
 
-  const tokNewline = (): Newline => {
+  const tokNewline = (): Newline | undefined => {
     const m = match(/^\n/)
     if (!m) return undefined
     return tk.tokNewline({ position: m.position });
   }
 
-  const tok = (): Token[] => {
+  const tok = (): Token[] | undefined => {
     if (isEqual(now(), end)) {
       return
     }

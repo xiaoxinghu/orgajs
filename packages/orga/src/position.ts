@@ -21,4 +21,3 @@ export const before = (p1: Point) => (p2: Point) => {
 export const isEmpty = (position: Position) => {
   return !position || isEqual(position.start, position.end)
 }
-
