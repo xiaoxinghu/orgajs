@@ -28,6 +28,18 @@
 * Why
 org-mode is simply a superior format than other more popular ones, but it's mostly trapped inside of emacs. It's so good that it was the #1 reason to learn and use emacs for a lot of people (me included). But it's too good to not share with the rest of the world. If it can run in JavaScript, it can run on anything.
 
+* Example
+
+#+begin_src org-mode
+,* hello +world+.
+
+This is a org-mode content.
+
+,#+begin_src javascript
+console.log('nested!')
+,#+end_src
+#+end_src
+
 * Compatible Eco-systems
 It integrates natively with popular tools.
 
