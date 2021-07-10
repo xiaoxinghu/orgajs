@@ -30,7 +30,7 @@ org-mode is simply a superior format than other more popular ones, but it's most
 
 * Example
 
-#+begin_src org-mode
+#+begin_src org
 ,* hello +world+.
 
 This is a org-mode content.
@@ -38,6 +38,8 @@ This is a org-mode content.
 ,#+begin_src javascript
 console.log('nested!')
 ,#+end_src
+
+,** this ai.
 #+end_src
 
 * Compatible Eco-systems
