@@ -1,9 +1,10 @@
 import { Point } from 'unist'
 import { isEqual } from '../position'
 import { Reader } from '../reader'
-import { FootnoteReference, Link, PhrasingContent, StyledText, Token, Newline } from '../types'
+import { FootnoteReference, Link, StyledText, Token, Newline } from './types'
 import uri from '../uri'
 import { escape } from '../utils'
+import * as tk from './util';
 
 const POST = `[\\s-\\.,:!?'\\)}]|$`
 const BORDER = `[^,'"\\s]`
@@ -23,25 +24,24 @@ interface Props {
   end?: Point
 }
 
-export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring: string[] } = { ignoring: [] }): Token[] => {
+export const tokenize = (props: Props, { ignoring }: { ignoring: string[] } = { ignoring: [] }): Token[] => {
+  const { reader } = props;
   const { now, eat, eol, match, jump, substring, getChar } = reader
-  start = start || { ...now() }
-  end = end || { ...eol() }
+  const start = props.start ?? { ...now() }
+  const end = props.end ?? { ...eol() }
   jump(start)
 
   let cursor: Point = { ...start }
 
   const _tokens: Token[] = []
 
-  const tokLink = (): Link => {
+  const tokLink = (): Link | undefined => {
     const m = match(/^\[\[([^\]]*)\](?:\[([^\]]*)\])?\]/m)
     if (!m) return undefined
     const linkInfo = uri(m.captures[1])
-    return {
-      type: 'link',
-      description: m.captures[2],
-      ...linkInfo,
-      position: m.position,
+    if (linkInfo) {
+      const { value, ...rest } = linkInfo;
+      return tk.tokLink(value, { ...rest, description: m.captures[2], position: m.position });
     }
   }
 
@@ -50,52 +50,44 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
 
     let m = match(/^\[fn:(\w*):/);
     if (!m) return [];
-    tokens.push({
-      type: 'footnote.inline.begin',
-      label: m.captures[1],
-      position: m.position,
-    });
+    tokens.push(tk.tokFootnoteInlineBegin(m.captures[1], { position: m.position }));
     jump(m.position.end);
 
     m = match(/^\]/);
     if (m) {
       // empty body
-      tokens.push({ type: 'text.plain', value: '', position: { start: m.position.start, end: m.position.start, indent: m.position.indent } });
+      tokens.push(tk.tokText('', { position: { start: m.position.start, end: m.position.start, indent: m.position.indent } }));
     } else {
       tokens.push(...tokenize({ reader }, { ignoring: [']'] }));
     }
 
     m = match(/^\]/);
     if (!m) return [];
-    tokens.push({
-      type: 'footnote.reference.end',
-      position: m.position
-    });
+    tokens.push(tk.tokFootnoteReferenceEnd({ position: m.position }));
 
     jump(tokens[0].position.start);
 
     return tokens;
   }
 
-  const tokFootnote = (): FootnoteReference => {
+  const tokFootnote = (): FootnoteReference | undefined => {
     const m = match(/^\[fn:(\w+)\]/);
     if (m) {
-      return {
-        type: 'footnote.reference',
-        label: m.captures[1],
-        position: m.position,
-        children: [],
-      }
+      return tk.tokFootnoteReference(m.captures[1], { position: m.position });
     }
   }
 
-  const tokStyledText = (marker: string) => (): StyledText => {
+  const tokStyledText = (marker: string) => (): StyledText | undefined => {
     const m = match(
       RegExp(`^${escape(marker)}(${BORDER}(?:.*?(?:${BORDER}))??)${escape(marker)}(?=(${POST}.*))`, 'm'))
     if (!m) return undefined
+    const value = m.captures[1];
+    if (ignoring.some(c => value.includes(c))) {
+      return;
+    }
     return {
       type: MARKERS[marker],
-      value: m.captures[1],
+      value,
       position: m.position,
     }
   }
@@ -110,7 +102,7 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     return true
   }
 
-  const tryTo = (tok: () => PhrasingContent) => {
+  const tryTo = (tok: () => Token | undefined) => {
     return tryToTokens(() => {
       const r = tok();
       return r ? [r] : [];
@@ -121,23 +113,16 @@ export const tokenize = ({ reader, start, end }: Props, { ignoring }: { ignoring
     if (isEqual(cursor, now())) return
     const position = { start: { ...cursor }, end: { ...now() } }
     const value = substring(position)
-    _tokens.push({
-      type: 'text.plain',
-      value,
-      position,
-    })
+    _tokens.push(tk.tokText(value, { position: position }));
   }
 
-  const tokNewline = (): Newline => {
+  const tokNewline = (): Newline | undefined => {
     const m = match(/^\n/)
     if (!m) return undefined
-    return {
-      type: 'newline',
-      position: m.position,
-    }
+    return tk.tokNewline({ position: m.position });
   }
 
-  const tok = () => {
+  const tok = (): Token[] | undefined => {
     if (isEqual(now(), end)) {
       return
     }

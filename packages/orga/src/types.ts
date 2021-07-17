@@ -1,186 +1,199 @@
-import { Literal as UnistLiteral, Node, Parent as UnistParent } from 'unist'
+import { Literal as UnistLiteral, Node as UnistNode, Parent as UnistParent, Position } from 'unist'
+import { Char } from './char';
+
+import {
+  Timestamp
+} from './tokenize/types';
+
+export {
+  Token
+} from './tokenize/types';
+
+export type { Timestamp };
+
+export interface Node extends UnistNode {
+  position: Position;
+}
 
 // ---- Basic Types ----
-export interface Parent extends UnistParent {
-  parent?: Parent;
+export interface Parent extends Node, Omit<UnistParent, 'position'> {
+  children: Child[];
+}
+
+export interface Child<T extends Parent = Parent> extends Node {
+  parent?: T | T & Child | undefined;
 }
 
 export type Primitive = string | number | boolean
 
 export interface Attributes {
-  [key: string]: Primitive | { [key: string]: Primitive } ,
+  [key: string]: Primitive | { [key: string]: Primitive },
 }
 
 export interface Attributed {
   attributes: Attributes
 }
 
-export interface Timestamp {
-  date: Date;
-  end?: Date;
-}
-
 // ---- Syntax Tree Nodes ----
 export interface Document extends Parent {
   type: 'document';
   properties: { [key: string]: string; };
-  children: TopLevelContent[];
+  children: [Section, ...Headline[]] | Headline[];
 }
 
-export interface Section extends Parent {
+export interface Section extends Child<Document | Headline>, Parent {
   type: 'section';
-  level: number;
   properties: { [key: string]: string; };
   children: Content[];
+  // v2021.07.03 - "Only a headline can contain a section. As an
+  // exception, text before the first headline in the document also
+  // belongs to a section."
+  parent?: Document | Headline | undefined;
 }
 
-type TopLevelContent =
-  | Content | Keyword | Footnote
-
-type Content =
-  | Section
+export type Content =
+  | Footnote
   | Paragraph
   | Block
+  | VerseBlock
   | Drawer
+  | GreaterBlock
+  | SpecialBlock
   | Planning
   | List
   | Table
   | HorizontalRule
-  | Headline
   | HTML
 
-export interface Footnote extends Parent {
+export interface Footnote extends Child, Parent {
   type: 'footnote';
   label: string;
+  // v2021.07.03 - "CONTENTS can contain any element excepted another
+  // footnote definition. It ends at the next footnote definition, the
+  // next headline, two consecutive empty lines or the end of buffer."
+  children: Exclude<Content, Footnote>[];
 }
 
-export interface Block extends Literal, Attributed {
+export interface Block extends Literal, Child, Attributed {
   type: 'block';
+  name: 'COMMENT' | 'EXAMPLE' | 'EXPORT' | 'SRC';
+  params: string[];
+}
+
+export interface VerseBlock extends Parent, Child, Attributed {
+  type: 'verse_block';
+  params: string[];
+  children: PhrasingContent[];
+}
+
+export interface GreaterBlock extends Parent, Child, Attributed {
+  type: 'greater_block';
+  name: 'CENTER' | 'QUOTE';
+  params: string[];
+}
+
+export interface SpecialBlock extends Parent, Child, Attributed {
+  type: 'special_block';
   name: string;
   params: string[];
-  value: string;
 }
 
-export interface Drawer extends Literal {
+export interface Drawer extends Child, Literal {
   type: 'drawer';
   name: string;
-  value: string;
 }
 
-export interface Planning extends Node {
+export interface Planning extends Child {
   type: 'planning';
   keyword: string;
   timestamp: Timestamp;
 }
 
-export interface List extends Parent, Attributed {
+export interface List extends Parent, Child, Attributed {
   type: 'list';
   indent: number;
   ordered: boolean;
-  children: (List | ListItem)[];
+  // "A plain list is a set of consecutive items of the same indentation. It can only directly contain items."
+  children: ListItem[];
 }
 
 type TableContent = TableRow | TableRule
 
-export interface Table extends Parent, Attributed {
+export interface Table extends Parent, Child, Attributed {
   type: 'table';
   children: TableContent[];
 }
 
-export interface TableRow extends Parent {
+export interface TableRow extends Parent, Child<Table> {
   type: 'table.row';
   children: TableCell[];
 }
 
-export interface TableCell extends Parent {
+export interface TableCell extends Parent, Child<TableRow> {
   type: 'table.cell';
   children: PhrasingContent[];
 }
 
-export interface ListItem extends Parent {
+export interface ListItem extends Parent, Child<List> {
   type: 'list.item';
   indent: number;
   tag?: string;
 }
 
-export interface Headline extends Parent {
+export interface Headline extends Parent, Child<Document | Headline> {
   type: 'headline';
   level: number;
   keyword?: string;
   actionable: boolean;
-  priority?: string;
+  priority?: Char;
   content: string;
   tags?: string[];
+  // v2021.07.03 - "A headline contains directly one section
+  // (optionally), followed by any number of deeper level headlines."
+  children: [Section, ...Headline[]] | Headline[];
 }
 
-
-export interface Paragraph extends Parent, Attributed {
+export interface Paragraph extends Parent, Child, Attributed {
   type: 'paragraph';
   children: PhrasingContent[];
 }
 
-interface Literal extends UnistLiteral {
+export interface Literal extends Omit<UnistLiteral, 'position'>, Node {
   value: string;
 }
 
-export interface HTML extends Literal {
+export interface HTML extends Child, Literal {
   type: 'html';
 }
-
-// ---- Tokens ----
-export type Token =
-  | Keyword
-  | Todo
-  | Newline
-  | HorizontalRule
-  | Stars
-  | Priority
-  | Tags
-  | PlanningKeyword
-  | PlanningTimestamp
-  | ListItemTag
-  | ListItemCheckbox
-  | ListItemBullet
-  | TableRule
-  | TableColumnSeparator
-  | PhrasingContent
-  | FootnoteLabel
-  | FootnoteInlineBegin
-  | FootnoteReferenceEnd
-  | BlockBegin
-  | BlockEnd
-  | DrawerBegin
-  | DrawerEnd
-  | Comment
 
 export type PhrasingContent =
   | StyledText | Link | FootnoteReference | Newline
 
-export interface HorizontalRule extends Node {
+export interface HorizontalRule extends Child {
   type: 'hr'
 }
 
-export interface Newline extends Node {
+export interface Newline extends Child {
   type: 'newline'
 }
 
-export interface StyledText extends Literal {
+export interface StyledText extends Literal, Child<Paragraph> {
   type:
-    | 'text.plain'
-    | 'text.bold'
-    | 'text.verbatim'
-    | 'text.italic'
-    | 'text.strikeThrough'
-    | 'text.underline'
-    | 'text.code'
+  | 'text.plain'
+  | 'text.bold'
+  | 'text.verbatim'
+  | 'text.italic'
+  | 'text.strikeThrough'
+  | 'text.underline'
+  | 'text.code'
 }
 
-export interface Link extends Literal {
+export interface Link extends Literal, Child<Paragraph> {
   type: 'link';
-  protocol: string;
-  description: string;
-  value: string;
-  search?: string | number;
+  protocol: string | undefined;
+  description: string | undefined;
+  search?: string | number | undefined;
+  parent?: Paragraph | undefined;
 }
 
 /**
@@ -202,109 +215,12 @@ export interface Link extends Literal {
  * string), if `children` is non-empty, then this is an inline
  * footnote definition.
  */
-export interface FootnoteReference extends Parent {
+export interface FootnoteReference extends Parent, Child<Paragraph> {
   type: 'footnote.reference';
   label: string;
   children: PhrasingContent[];
 }
 
-export interface FootnoteInlineBegin extends Node {
-  type: 'footnote.inline.begin';
-  label: string;
-}
-
-export interface FootnoteReferenceEnd extends Node {
-  type: 'footnote.reference.end';
-}
-
-// headline tokens
-export interface Stars extends Node {
-  type: 'stars';
-  level: number;
-}
-
-export interface Todo extends Node {
-  type: 'todo';
-  keyword: string;
-  actionable: boolean;
-}
-
-export interface Priority extends Literal {
-  type: 'priority';
-  value: string;
-}
-
-export interface Tags extends Node {
-  type: 'tags';
-  tags: string[];
-}
-
-// block tokens
-export interface BlockBegin extends Node {
-  type: 'block.begin';
-  name: string;
-  params: string[];
-}
-
-export interface BlockEnd extends Node {
-  type: 'block.end';
-  name: string;
-}
-
-// drawer tokens
-export interface DrawerBegin extends Node {
-  type: 'drawer.begin';
-  name: string;
-}
-
-interface DrawerEnd extends Node {
-  type: 'drawer.end';
-}
-
-interface Comment extends Literal {
-  type: 'comment';
-}
-
-export interface Keyword extends Node {
-  type: 'keyword';
-  key: string;
-  value: string;
-}
-
-export interface FootnoteLabel extends Node {
-  type: 'footnote.label';
-  label: string;
-}
-
-export interface PlanningKeyword extends Literal {
-  type: 'planning.keyword';
-  value: string;
-}
-
-export interface PlanningTimestamp extends UnistLiteral {
-  type: 'planning.timestamp';
-  value: Timestamp;
-}
-
-export interface ListItemTag extends Literal {
-  type: 'list.item.tag';
-}
-
-export interface ListItemCheckbox extends Node {
-  type: 'list.item.checkbox';
-  checked: boolean;
-}
-
-export interface ListItemBullet extends Node {
-  type: 'list.item.bullet';
-  ordered: boolean;
-  indent: number;
-}
-
-export interface TableRule extends Node {
+export interface TableRule extends Child<Table> {
   type: 'table.hr';
-}
-
-export interface TableColumnSeparator extends Node {
-  type: 'table.columnSeparator';
 }

@@ -1,47 +1,54 @@
-import { push } from '../node'
+import { push, setChildren } from '../node'
 import { Lexer } from '../tokenize'
 import { Headline } from '../types'
+import utils, * as ast from './utils'
+import {
+  eat as eatTok,
+  matching,
+  tokenValued,
+} from './utils';
+import parseSection from './section';
 
-export default (lexer: Lexer): Headline => {
+export default function parseHeadline(minDepth: number = 0) {
+  return (lexer: Lexer): Headline | undefined => {
 
-  const { peek, eat } = lexer
+    const { eat, eatAll } = lexer
+    const { returning, tryMany, tryTo } = utils(lexer)
 
-  const parse = (headline: Headline): Headline => {
-    const a = push(headline)
-
-    const token = peek()
-    if (!token) return headline
-    if (token.type === 'newline') {
-      push(headline)(token)
-      eat()
-      return headline
+    const stars = returning(tryTo(matching(eatTok('stars'), t => t.level >= minDepth)))();
+    if (!stars) {
+      // need stars with a depth greater than (or equal to) the minimum
+      return;
     }
+    const headline = ast.heading(stars.level, '', { position: stars.position });
 
-    if (token.type === 'stars') {
-      headline.level = token.level
-    }
+    tryTo(eatTok('todo'))(t => {
+      headline.keyword = t.keyword
+      headline.actionable = t.actionable
+    });
 
-    if (token.type === 'todo') {
-      headline.keyword = token.keyword
-      headline.actionable = token.actionable
-    }
+    tryTo(eatTok('priority'))(t => {
+      headline.priority = t.value;
+    });
 
-    if (token.value) {
-      headline.content += token.value
-    }
+    // actual title
+    tryMany(tokenValued())(t => {
+      headline.content += t.value
+    });
 
-    if (token.type === 'tags') {
-      headline.tags = token.tags
-    }
+    tryTo(eatTok('tags'))(t => {
+      headline.tags = t.tags
+    });
 
-    a(token)
-    eat()
-    return parse(headline)
-  }
+    // newline that ends the heading line
+    eat('newline');
 
-  return parse({
-    type: 'headline',
-    actionable: false,
-    content: '',
-    children: [], level: -1 })
+    // these belong to the heading line
+    eatAll('newline');
+
+    //tryTo(parseSection())(s => push(headline)(s));
+    tryTo(parseSection())(n => setChildren(headline)([n]));
+    tryMany(parseHeadline(headline.level + 1))(push(headline));
+    return headline;
+  };
 }

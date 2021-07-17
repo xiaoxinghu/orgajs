@@ -1,61 +1,75 @@
-import { Node, Position } from 'unist'
+import { Position } from 'unist'
 import { after, before, isEmpty } from './position'
-import { Parent } from './types'
+import { Child, Node, Parent } from './types'
 
 const clone = ({ start, end }: Position): Position => ({
   start: { ...start },
   end: { ...end },
 })
 
-const adjustPosition = (parent: Parent) => (child: Node): void => {
+const adjustPosition = (parent: Parent & Partial<Child>) => (child: Node): void => {
   let dirty = false
 
   if (!child.position) return
+  const cp = clone(child.position);
   if (parent.position) {
+    parent.position = clone(parent.position);
     const belowLowerBound = before(parent.position.start)
     const aboveUpperBound = after(parent.position.end)
 
     if (isEmpty(parent.position)) {
-      parent.position = clone(child.position)
+      parent.position = cp;
       dirty = true
-    } else if (belowLowerBound(child.position.start)) {
-      parent.position.start = { ...child.position.start }
+    } else if (belowLowerBound(cp.start)) {
+      parent.position.start = cp.start;
       dirty = true
-    }else if (aboveUpperBound(child.position.end)) {
-      parent.position.end = { ...child.position.end }
+    } else if (aboveUpperBound(cp.end)) {
+      parent.position.end = cp.end;
       dirty = true
     }
   } else {
-    parent.position = clone(child.position)
+    parent.position = cp;
     dirty = true
   }
 
-  if (!!parent.parent && dirty) {
+  if ('parent' in parent && parent.parent && dirty) {
     adjustPosition(parent.parent)(parent)
   }
 }
 
+export const pushMany = <P extends Parent>(p: P) => (n: P['children']): P => {
+  n.forEach(n => push(p)(n));
+  return p;
+}
 
-export const push = <P extends Parent>(p: P) => (n: Node & P['children'][number]): P => {
+export const push = <P extends Parent>(p: P) => (n: P['children'][number]): P => {
   if (!n) return p
   adjustPosition(p)(n)
-  const node = n as Parent
-  if (node) {
-    node.parent = p
+  if (n) {
+    n.parent = p
   }
   p.children.push(n)
   return p
 }
 
-export const map = (transform: (n: Node) => any) => (node: Node) => {
+export const setChildren = <P extends Parent>(p: P) => (ns: [Node, ...Node[]] & P['children']): P => {
+  adjustPosition(p)(ns[ns.length - 1])
+  for (const n of ns) {
+    n.parent = p;
+  }
+  p.children = ns;
+  return p
+}
+
+export const map = <T extends Node & Partial<Parent>>(transform: (n: Node & Partial<Parent>) => T) => (node: Node & Partial<Parent>): T => {
 
   const result = {
     type: node.type,
     ...transform(node),
   }
 
-  if ((node as Parent).children) {
-    result.children = (node as Parent).children.map(map(transform))
+  if ('children' in node && node.children) {
+    result.children = node.children.map(map(transform))
   }
   return result
 }
@@ -74,10 +88,10 @@ interface DumpContext {
 //   return [line].concat(rest)
 // }
 
-export const level = (node: Parent): number => {
+export const level = (node: Child): number => {
   let count = 0
   let parent = node.parent
-  while (parent) {
+  while ('parent' in parent) {
     count += 1
     parent = parent.parent
   }

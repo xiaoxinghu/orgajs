@@ -1,76 +1,48 @@
 import { push } from '../node'
-import { FootnoteReference, Paragraph, PhrasingContent, Token } from '../types'
-import { isPhrasingContent } from '../utils'
+import { Paragraph, Token } from '../types'
+import * as ast from './utils';
 import { Lexer } from '../tokenize';
+import phrasingContent from './phrasingContent';
+import utils from './utils';
+import { Position } from 'unist';
 
-const isWhitespaces = node => {
+const isWhitespaces = (node: Paragraph['children'][number]) => {
   return node.type === 'text.plain' && node.value.trim().length === 0
 }
 
-export default function paragraph(lexer: Lexer): Paragraph | undefined {
+export default function paragraph(lexer: Lexer, opts?: Partial<{ breakOn: (t: Token) => boolean; maxEOL: number }>): Paragraph | undefined {
   const { peek, eat } = lexer;
+  const breakOn = opts?.breakOn ?? (_t => false);
+  const maxEOL = opts?.maxEOL ?? 2;
   let eolCount = 0
 
-  const createParagraph = (): Paragraph => ({
-    type: 'paragraph',
-    children: [],
-    attributes: {},
-  })
+  const { tryTo } = utils(lexer);
 
+  const createParagraph = (start: Position): Paragraph => ast.paragraph([], { position: start });
 
-  const build = (p: Paragraph = undefined): Paragraph | undefined => {
+  const build = (p?: Paragraph): Paragraph | undefined => {
     const token = peek()
-    if (!token || eolCount >= 2) {
+    if (!token || eolCount >= maxEOL) {
       return p
     }
-
-    function readAFootnote(par: Paragraph | FootnoteReference = p): PhrasingContent | undefined {
-      if (token.type === 'footnote.inline.begin') {
-        eat();
-        const fn: FootnoteReference =
-        {
-          children: [],
-          type: 'footnote.reference',
-          label: token.label,
-        };
-        let inner: Token;
-        while (inner = peek()) {
-          if (inner.type === 'footnote.inline.begin') {
-            // nested footnote reference
-            readAFootnote(fn);
-          } else if (inner.type === 'footnote.reference.end') {
-            eat();
-            push(par)(fn);
-            eolCount = 0;
-            return fn;
-          } else if (isPhrasingContent(inner)) {
-            eat();
-            fn.children.push(inner);
-          } else {
-            return undefined;
-          }
-        }
-      }
-    }
-
-    if (readAFootnote()) {
-      return build(p);
+    if (breakOn(token)) {
+      return p;
     }
 
     if (token.type === 'newline') {
       eat()
       eolCount += 1
-      p = p || createParagraph()
-      push(p)({ type: 'text.plain', value: ' ', position: token.position })
+      p = p ?? createParagraph(token.position)
+      push(p)(ast.text(' ', { position: token.position }));
       return build(p)
     }
 
-    if (isPhrasingContent(token)) {
-      p = p || createParagraph()
-      push(p)(token)
-      eat()
+    if (tryTo(phrasingContent)(phras => {
+      p = p ?? createParagraph(phras.position)
+      push(p)(phras)
       eolCount = 0
-      return build(p)
+    })) {
+      return build(p);
     }
     return p
   }
@@ -79,11 +51,12 @@ export default function paragraph(lexer: Lexer): Paragraph | undefined {
   if (!p) return undefined
   // trim whitespaces
   while (p.children.length > 0) {
-    if (isWhitespaces(p.children[p.children.length - 1])) {
+    const children = p.children as [(typeof p)['children'][number], ...(typeof p)['children'][number][]];
+    if (isWhitespaces(children[children.length - 1])) {
       p.children.pop()
       continue
     }
-    if (isWhitespaces(p.children[0])) {
+    if (isWhitespaces(children[0])) {
       p.children.slice(1)
       continue
     }

@@ -1,60 +1,89 @@
 import { push } from '../node'
 import { Lexer } from '../tokenize'
-import { Table, TableRow, TableRule, TableCell, Parent } from '../types'
-import { isPhrasingContent } from '../utils';
+import {
+  FootnoteReference,
+  Link,
+  StyledText,
+  Table,
+  TableRow,
+  TableRule,
+  TableCell
+} from '../types'
+import utils, * as ast from './utils';
+import {
+  andThen2d,
+  map,
+  oneOf,
+} from './utils';
+import footnoteReference from './footnoteReference';
+import link from './link';
+import textMarkup from './textMarkup';
+import { Position } from 'unist';
 
 export default (lexer: Lexer): Table | undefined => {
   const { peek, eat } = lexer
 
+  const { tryMany, trySome } = utils(lexer);
+
   const token = peek()
   if (!token || !token.type.startsWith('table.')) return undefined
 
-  const getCell = (cell: TableCell = undefined): TableCell => {
-    const t = peek()
-    if (!t || t.type === 'newline' || t.type === 'table.columnSeparator') {
-      return cell
-    }
-    const c = cell || { type: 'table.cell', children: [] }
-    if (isPhrasingContent(t)) {
-      push(c)(t)
-      eat()
-    } else {
-      return undefined;
-    }
-    return getCell(c)
+  const getCell = (start: Position): TableCell | undefined => {
+    let t = peek()
+    if (!t || t.type === 'newline') return;
+    const c = ast.tableCell([], { position: start });
+    tryMany<FootnoteReference | Link | StyledText>([
+      // entity, // not yet implemented
+      // exportSnippet, // not yet implemented
+      footnoteReference,
+      link,
+      // macro, // not yet implemented
+      // radioTarget, // not yet implemented
+      // target, // not yet implemented
+      // subscript, // not yet implemented
+      // superscript, // not yet implemented
+      // superscript, // not yet implemented
+      // timestamp, // not yet implemented
+      textMarkup,
+    ])(push(c));
+
+    // check for end of cell to get end-of-cell position
+    t = peek();
+    if (t && t.type === 'table.columnSeparator') {
+      c.position.end = t.position.end;
+    };
+
+    return c;
   }
 
-  const getRow = (row: TableRow = undefined): TableRow | TableRule => {
-    const t = peek()
-    if (!t) {
-      return row
+  const tableRule = (): TableRule | undefined => {
+    const t = peek();
+    if (t && t.type === 'table.hr') {
+      return t;
     }
-    if (t.type === 'table.hr' && row === undefined) {
-      eat()
-      return t
-    }
-    if (t.type === 'table.columnSeparator') {
-      eat('table.columnSeparator')
-      const _row = row || { type: 'table.row', children: [] }
-      push(_row)(getCell())
-      return getRow(_row)
-    }
-    return row
+  };
+
+  const tRow = (): TableRow | undefined => {
+    const t = peek();
+    if (!t || t.type !== 'table.columnSeparator') return;
+    const row = ast.tableRow([], { position: t.position });
+    const aColSep = () => eat('table.columnSeparator');
+    const aCol = oneOf<TableCell | 'eor'>([andThen2d(aColSep, colSep => () =>
+      getCell(colSep.position)
+    ), map(_ => 'eor', aColSep)]);
+
+    trySome(aCol)(c => {
+      if (c !== 'eor') {
+        push(row)(c);
+      }
+    });
+    return row;
+  };
+
+  const tableRow = oneOf<TableRow | TableRule>([tableRule, tRow]);
+
+  const table = ast.table([], { position: token.position });
+  if (trySome(tableRow)(push(table), _ => eat('newline'))) {
+    return table;
   }
-
-  const parse = (table: Table = undefined): Table => {
-    const row = getRow()
-    if (!row) {
-      return table
-    }
-
-    const _table = table || { type: 'table', children: [], attributes: {} }
-
-    push(_table)(row)
-    eat('newline')
-    return parse(_table)
-  }
-
-  return parse()
-
 }
